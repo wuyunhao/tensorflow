@@ -7,8 +7,9 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
-load("/tensorflow/tensorflow", "tf_copts")
-load("/tensorflow/tensorflow", "tf_cuda_library")
+load("//tensorflow:tensorflow.bzl", "tf_copts")
+load("//tensorflow:tensorflow.bzl", "tf_cuda_library")
+load("@local_config_cuda//cuda:platform.bzl", "cuda_library_path")
 
 cc_library(
     name = "gtest",
@@ -30,17 +31,48 @@ tf_cuda_library(
     name = "stream_executor",
     deps = [
         "//tensorflow/stream_executor",
+    ] + select({
+        "@local_config_cuda//cuda:darwin": ["IOKit"],
+        "//conditions:default": [],
+    }),
+)
+
+# OSX framework for device driver access
+cc_library(
+    name = "IOKit",
+    linkopts = ["-framework IOKit"],
+)
+
+# Minimal lib so that tools used for mobile compilation
+# don't have to depend on platformlib.
+cc_library(
+    name = "proto_parsing",
+    copts = tf_copts(),
+    deps = [
+        "//tensorflow/core:protos_cc",
     ],
+)
+
+# Minimal lib to be used by tensorflow/core:framework_lite.
+# This provides minimal support for writing operator implementations (kernels),
+# and excludes anything that can bloat binary size if used.
+cc_library(
+    name = "minimal",
+    srcs = [],
+    copts = tf_copts(),
 )
 
 cc_library(
     name = "platformlib",
     copts = tf_copts(),
     deps = [
+        "//tensorflow/core:protos_cc",
+        "@com_googlesource_code_re2//:re2",
+        "@farmhash_archive//:farmhash",
+        "@gif_archive//:gif",
+        "@highwayhash//:sip_hash",
         "@jpeg_archive//:jpeg",
         "@png_archive//:png",
-        "@re2//:re2",
-        "//tensorflow/core:protos_cc",
     ],
 )
 
@@ -59,12 +91,6 @@ cc_library(
     deps = [],
 )
 
-cc_library(
-    name = "cuda_runtime_extra",
-    linkstatic = 1,
-    deps = [],
-)
-
 filegroup(
     name = "android_proto_lib_portable_proto",
     srcs = [],
@@ -74,12 +100,37 @@ filegroup(
 cc_library(
     name = "cuda",
     data = [
-        "//third_party/gpus/cuda:lib64/libcudart.so.7.0",
+        "@local_config_cuda//cuda:{}".format(cuda_library_path("cudart")),
     ],
-    linkopts = [
-        "-Wl,-rpath,third_party/gpus/cuda/lib64",
-    ],
+    linkopts = select({
+        "@local_config_cuda//cuda:darwin": [
+            "-Wl,-rpath,../local_config_cuda/cuda/lib",
+            "-Wl,-rpath,../local_config_cuda/cuda/extras/CUPTI/lib",
+        ],
+        "//conditions:default": [
+            "-Wl,-rpath,../local_config_cuda/cuda/lib64",
+            "-Wl,-rpath,../local_config_cuda/cuda/extras/CUPTI/lib64",
+        ],
+    }),
     deps = [
-        "//third_party/gpus/cuda:cudart",
+        "@local_config_cuda//cuda:cudart",
     ],
+)
+
+filegroup(
+    name = "android_srcs",
+    srcs = glob(["*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            "**/METADATA",
+            "**/OWNERS",
+        ],
+    ),
+    visibility = ["//tensorflow:__subpackages__"],
 )

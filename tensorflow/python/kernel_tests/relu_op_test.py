@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-import tensorflow.python.platform
 
 import numpy as np
 import tensorflow as tf
@@ -45,11 +43,11 @@ class ReluTest(tf.test.TestCase):
     self.assertShapeEqual(np_relu, relu)
 
   def testNumbers(self):
-    for t in [np.int32, np.int64, np.float32, np.float64]:
+    for t in [np.int32, np.int64, np.float16, np.float32, np.float64]:
       self._testRelu(
           np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
           use_gpu=False)
-      if t in [np.float32, np.float64]:
+      if t in [np.float16, np.float32, np.float64]:
         self._testRelu(
             np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
             use_gpu=True)
@@ -72,24 +70,6 @@ class ReluTest(tf.test.TestCase):
                                            x_init_value=x_init)
     print("relu (float32) gradient err = ", err)
     self.assertLess(err, 1e-4)
-
-  def testGradientNaN(self):
-    with self.test_session():
-      # Note the NaN is injected as an input to the gradient calculation.
-      x = tf.constant(
-          [-0.9, -0.7, -0.5, -0.3, np.nan, 0.1, 0.3, 0.5, 0.7, 0.9],
-          shape=[2, 5], name="x")
-      y = tf.nn.relu(x, name="relu")
-      grad_ys = tf.constant(
-          [-0.9, -0.7, -0.5, -0.3, -0.1, 0.1, 0.3, 0.5, 0.7, 0.9],
-          shape=[2, 5], name="ys")
-      g_op = tf.gradients(
-          [y], [x], grad_ys=[grad_ys], name="gradients")[0]
-      try:
-        g_op.op.run()
-        assert False, "ReluGrad should have failed due to CheckNumerics."
-      except Exception as e:  # pylint: disable=broad-except
-        assert "ReluGrad input is not finite." in str(e)
 
   def testGradientFloat64(self):
     with self.test_session():
@@ -144,6 +124,17 @@ class ReluTest(tf.test.TestCase):
     print("relu (float64) gradient of gradient err = ", err)
     self.assertLess(err, 1e-10)
 
+  def testGradientScalar(self):
+    with self.test_session() as sess:
+      x = tf.Variable(100.)
+      y = tf.nn.relu(x)
+      loss = y**2
+      optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.25)
+      train_op = optimizer.minimize(loss)
+      sess.run(tf.initialize_all_variables())
+      sess.run(train_op)
+      self.assertAllClose(x.eval(), 50.0)
+
 
 class Relu6Test(tf.test.TestCase):
 
@@ -169,11 +160,11 @@ class Relu6Test(tf.test.TestCase):
     self.assertShapeEqual(np_relu6, relu6)
 
   def testNumbers(self):
-    for t in [np.int32, np.int64, np.float32, np.float64]:
+    for t in [np.int32, np.int64, np.float16, np.float32, np.float64]:
       self._testRelu6(
           np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
           use_gpu=False)
-      if t in [np.float, np.double]:
+      if t in [np.float16, np.float, np.double]:
         self._testRelu6(
             np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
             use_gpu=True)
@@ -237,7 +228,7 @@ class EluTest(tf.test.TestCase):
     self.assertShapeEqual(np_elu, elu)
 
   def testNumbers(self):
-    for t in [np.float32, np.float64]:
+    for t in [np.float16, np.float32, np.float64]:
       self._testElu(
           np.array([[-9, 7, -5, 3, -1], [1, -3, 5, -7, 9]]).astype(t),
           use_gpu=False)

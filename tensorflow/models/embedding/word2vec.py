@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,8 +37,6 @@ import sys
 import threading
 import time
 
-import tensorflow.python.platform
-
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
 import numpy as np
@@ -56,7 +54,7 @@ flags.DEFINE_string(
     "eval_data", None, "File consisting of analogies of four tokens."
     "embedding 2 - embedding 1 + embedding 3 should be close "
     "to embedding 4."
-    "E.g. https://word2vec.googlecode.com/svn/trunk/questions-words.txt.")
+    "See README.md for how to get 'questions-words.txt'.")
 flags.DEFINE_integer("embedding_size", 200, "The embedding dimension size.")
 flags.DEFINE_integer(
     "epochs_to_train", 15,
@@ -83,16 +81,16 @@ flags.DEFINE_float("subsample", 1e-3,
 flags.DEFINE_boolean(
     "interactive", False,
     "If true, enters an IPython interactive session to play with the trained "
-    "model. E.g., try model.analogy('france', 'paris', 'russia') and "
-    "model.nearby(['proton', 'elephant', 'maxwell']")
+    "model. E.g., try model.analogy(b'france', b'paris', b'russia') and "
+    "model.nearby([b'proton', b'elephant', b'maxwell'])")
 flags.DEFINE_integer("statistics_interval", 5,
                      "Print statistics every n seconds.")
 flags.DEFINE_integer("summary_interval", 5,
                      "Save training summary to file every n seconds (rounded "
-                     "up to statistics interval.")
+                     "up to statistics interval).")
 flags.DEFINE_integer("checkpoint_interval", 600,
                      "Checkpoint the model (i.e. save the parameters) every n "
-                     "seconds (rounded up to statistics interval.")
+                     "seconds (rounded up to statistics interval).")
 
 FLAGS = flags.FLAGS
 
@@ -166,9 +164,8 @@ class Word2Vec(object):
     self.build_graph()
     self.build_eval_graph()
     self.save_vocab()
-    self._read_analogies()
 
-  def _read_analogies(self):
+  def read_analogies(self):
     """Reads through the analogy question file.
 
     Returns:
@@ -250,7 +247,7 @@ class Word2Vec(object):
     true_logits = tf.reduce_sum(tf.mul(example_emb, true_w), 1) + true_b
 
     # Sampled logits: [batch_size, num_sampled]
-    # We replicate sampled noise lables for all examples in the batch
+    # We replicate sampled noise labels for all examples in the batch
     # using the matmul.
     sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
     sampled_logits = tf.matmul(example_emb,
@@ -380,7 +377,8 @@ class Word2Vec(object):
     opts = self._options
     with open(os.path.join(opts.save_path, "vocab.txt"), "w") as f:
       for i in xrange(opts.vocab_size):
-        f.write("%s %d\n" % (tf.compat.as_text(opts.vocab_words[i]),
+        vocab_word = tf.compat.as_text(opts.vocab_words[i]).encode("utf-8")
+        f.write("%s %d\n" % (vocab_word,
                              opts.vocab_counts[i]))
 
   def _train_thread_body(self):
@@ -397,8 +395,7 @@ class Word2Vec(object):
     initial_epoch, initial_words = self._session.run([self._epoch, self._words])
 
     summary_op = tf.merge_all_summaries()
-    summary_writer = tf.train.SummaryWriter(opts.save_path,
-                                            graph_def=self._session.graph_def)
+    summary_writer = tf.train.SummaryWriter(opts.save_path, self._session.graph)
     workers = []
     for _ in xrange(opts.concurrent_steps):
       t = threading.Thread(target=self._train_thread_body)
@@ -423,7 +420,7 @@ class Word2Vec(object):
         last_summary_time = now
       if now - last_checkpoint_time > opts.checkpoint_interval:
         self.saver.save(self._session,
-                        opts.save_path + "model",
+                        os.path.join(opts.save_path, "model.ckpt"),
                         global_step=step.astype(int))
         last_checkpoint_time = now
       if epoch != initial_epoch:
@@ -449,7 +446,11 @@ class Word2Vec(object):
     # How many questions we get right at precision@1.
     correct = 0
 
-    total = self._analogy_questions.shape[0]
+    try:
+      total = self._analogy_questions.shape[0]
+    except AttributeError as e:
+      raise AttributeError("Need to read analogy questions.")
+
     start = 0
     while start < total:
       limit = start + 2500
@@ -478,8 +479,9 @@ class Word2Vec(object):
     idx = self._predict(wid)
     for c in [self._id2word[i] for i in idx[0, :]]:
       if c not in [w0, w1, w2]:
-        return c
-    return "unknown"
+        print(c)
+        break
+    print("unknown")
 
   def nearby(self, words, num=20):
     """Prints out nearby words given a list of words."""
@@ -509,7 +511,9 @@ def main(_):
     sys.exit(1)
   opts = Options()
   with tf.Graph().as_default(), tf.Session() as session:
-    model = Word2Vec(opts, session)
+    with tf.device("/cpu:0"):
+      model = Word2Vec(opts, session)
+      model.read_analogies() # Read analogy questions
     for _ in xrange(opts.epochs_to_train):
       model.train()  # Process one epoch
       model.eval()  # Eval analogies.
@@ -519,8 +523,8 @@ def main(_):
                      global_step=model.global_step)
     if FLAGS.interactive:
       # E.g.,
-      # [0]: model.analogy('france', 'paris', 'russia')
-      # [1]: model.nearby(['proton', 'elephant', 'maxwell'])
+      # [0]: model.analogy(b'france', b'paris', b'russia')
+      # [1]: model.nearby([b'proton', b'elephant', b'maxwell'])
       _start_shell(locals())
 
 

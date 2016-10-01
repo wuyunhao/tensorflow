@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@
 set -e
 
 # Select bazel version.
-BAZEL_VERSION="0.1.1"
+BAZEL_VERSION="0.3.1"
 
 # Install bazel.
 mkdir /bazel
 cd /bazel
 curl -fSsL -O https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh
-curl -fSsL -o /bazel/LICENSE.txt https://raw.githubusercontent.com/bazelbuild/bazel/master/LICENSE.txt
 chmod +x /bazel/bazel-*.sh
 /bazel/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh
 rm -f /bazel/bazel-$BAZEL_VERSION-installer-linux-x86_64.sh

@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import numpy as np
 import tensorflow as tf
 
@@ -38,6 +36,10 @@ class CastOpTest(tf.test.TestCase):
       return tf.int64
     elif dtype == np.bool:
       return tf.bool
+    elif dtype == np.complex64:
+      return tf.complex64
+    elif dtype == np.complex128:
+      return tf.complex128
     else:
       return None
 
@@ -55,9 +57,11 @@ class CastOpTest(tf.test.TestCase):
   def _testTypes(self, x, use_gpu=False):
     """Tests cast(x) to different tf."""
     if use_gpu:
-      type_list = [np.float32, np.float64, np.int64]
+      type_list = [np.float32, np.float64, np.int64,
+                   np.complex64, np.complex128]
     else:
-      type_list = [np.float32, np.float64, np.int32, np.int64]
+      type_list = [np.float32, np.float64, np.int32,
+                   np.int64, np.complex64, np.complex128]
     for from_type in type_list:
       for to_type in type_list:
         self._test(x.astype(from_type), to_type, use_gpu)
@@ -150,15 +154,23 @@ class CastOpTest(tf.test.TestCase):
     self._OpError(np.arange(0, 10), tf.string,
                   "Cast.*int64.*string.*")
 
+  def testCastToTypeOfVariable(self):
+    with self.test_session() as sess:
+      x = tf.Variable(5, dtype=tf.float32)
+      y = tf.Variable(True, dtype=tf.bool)
+      cast = tf.cast(y, x.dtype)
+      tf.initialize_all_variables().run()
+      self.assertEqual(1.0, sess.run(cast))
+
   def testGradients(self):
-    t = [tf.float32, tf.float64]
+    t = [tf.float32, tf.float64, tf.complex64, tf.complex128]
     for src_t in t:
       for dst_t in t:
         with self.test_session():
           x = tf.constant(1.0, src_t)
           z = tf.identity(x)
           y = tf.cast(z, dst_t)
-          err = tf.test.compute_gradient_error(x, [1], y, [1])
+          err = tf.test.compute_gradient_error(x, [], y, [])
           self.assertLess(err, 1e-3)
 
 
@@ -175,6 +187,24 @@ class SparseTensorCastTest(tf.test.TestCase):
       self.assertAllEqual(st_cast.values.eval(),
                           np.array([1, 2, 3], np.float32))
       self.assertAllEqual(st_cast.shape.eval(), [3])
+
+
+class SaturateCastTest(tf.test.TestCase):
+
+  def testSaturate(self):
+    in_types = tf.float32,
+    out_types = tf.int8, tf.uint8, tf.int16, tf.float32
+    with self.test_session() as sess:
+      for in_type in in_types:
+        for out_type in out_types:
+          lo, hi = in_type.min, in_type.max
+          x = tf.constant([lo, lo + 1, lo // 2, hi // 2, hi - 1, hi],
+                          dtype=in_type)
+          y = tf.saturate_cast(x, dtype=out_type)
+          self.assertEqual(y.dtype, out_type)
+          x, y = sess.run([x, y])
+          correct = np.maximum(out_type.min, np.minimum(out_type.max, x))
+          self.assertAllEqual(correct, y)
 
 
 if __name__ == "__main__":

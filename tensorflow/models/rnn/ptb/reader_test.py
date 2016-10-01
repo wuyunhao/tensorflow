@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,14 +21,9 @@ from __future__ import print_function
 
 import os.path
 
-# pylint: disable=g-bad-import-order,unused-import
-import tensorflow.python.platform
-
-import numpy as np
 import tensorflow as tf
 
 from tensorflow.models.rnn.ptb import reader
-from tensorflow.python.platform import gfile
 
 
 class PtbReaderTest(tf.test.TestCase):
@@ -43,23 +38,30 @@ class PtbReaderTest(tf.test.TestCase):
     tmpdir = tf.test.get_temp_dir()
     for suffix in "train", "valid", "test":
       filename = os.path.join(tmpdir, "ptb.%s.txt" % suffix)
-      with gfile.GFile(filename, "w") as fh:
+      with tf.gfile.GFile(filename, "w") as fh:
         fh.write(self._string_data)
     # Smoke test
     output = reader.ptb_raw_data(tmpdir)
     self.assertEqual(len(output), 4)
 
-  def testPtbIterator(self):
+  def testPtbProducer(self):
     raw_data = [4, 3, 2, 1, 0, 5, 6, 1, 1, 1, 1, 0, 3, 4, 1]
     batch_size = 3
     num_steps = 2
-    output = list(reader.ptb_iterator(raw_data, batch_size, num_steps))
-    self.assertEqual(len(output), 2)
-    o1, o2 = (output[0], output[1])
-    self.assertEqual(o1[0].shape, (batch_size, num_steps))
-    self.assertEqual(o1[1].shape, (batch_size, num_steps))
-    self.assertEqual(o2[0].shape, (batch_size, num_steps))
-    self.assertEqual(o2[1].shape, (batch_size, num_steps))
+    x, y = reader.ptb_producer(raw_data, batch_size, num_steps)
+    with self.test_session() as session:
+      coord = tf.train.Coordinator()
+      tf.train.start_queue_runners(session, coord=coord)
+      try:
+        xval, yval = session.run([x, y])
+        self.assertAllEqual(xval, [[4, 3], [5, 6], [1, 0]])
+        self.assertAllEqual(yval, [[3, 2], [6, 1], [0, 3]])
+        xval, yval = session.run([x, y])
+        self.assertAllEqual(xval, [[2, 1], [1, 1], [3, 4]])
+        self.assertAllEqual(yval, [[1, 0], [1, 1], [4, 1]])
+      finally:
+        coord.request_stop()
+        coord.join()
 
 
 if __name__ == "__main__":

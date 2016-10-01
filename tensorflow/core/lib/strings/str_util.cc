@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/lib/strings/str_util.h"
+
 #include <ctype.h>
+#include <vector>
+#include "tensorflow/core/lib/strings/numbers.h"
+#include "tensorflow/core/lib/strings/stringprintf.h"
 
 namespace tensorflow {
 namespace str_util {
@@ -80,8 +84,8 @@ inline int hex_digit_to_int(char c) {
   return x & 0xf;
 }
 
-bool CUnescapeInternal(StringPiece source, char* dest, int* dest_len,
-                       string* error) {
+bool CUnescapeInternal(StringPiece source, char* dest,
+                       string::size_type* dest_len, string* error) {
   char* d = dest;
   const char* p = source.data();
   const char* end = source.end();
@@ -196,24 +200,13 @@ bool CUnescapeInternal(StringPiece source, char* dest, int* dest_len,
 
 bool CUnescape(StringPiece source, string* dest, string* error) {
   dest->resize(source.size());
-  int dest_size;
+  string::size_type dest_size;
   if (!CUnescapeInternal(source, const_cast<char*>(dest->data()), &dest_size,
                          error)) {
     return false;
   }
   dest->erase(dest_size);
   return true;
-}
-
-bool NumericParse32(const string& text, int32* val) {
-  // Slow, but this code is not performance critical, and this
-  // doesn't bring in any new dependencies
-  char junk;
-  if (sscanf(text.c_str(), "%d%c", val, &junk) == 1) {
-    return true;
-  } else {
-    return false;
-  }
 }
 
 void StripTrailingWhitespace(string* s) {
@@ -286,6 +279,14 @@ bool ConsumePrefix(StringPiece* s, StringPiece expected) {
   return false;
 }
 
+bool ConsumeSuffix(StringPiece* s, StringPiece expected) {
+  if (s->ends_with(expected)) {
+    s->remove_suffix(expected.size());
+    return true;
+  }
+  return false;
+}
+
 bool ConsumeLeadingDigits(StringPiece* s, uint64* val) {
   const char* p = s->data();
   const char* limit = p + s->size();
@@ -294,7 +295,7 @@ bool ConsumeLeadingDigits(StringPiece* s, uint64* val) {
     const char c = *p;
     if (c < '0' || c > '9') break;
     uint64 new_v = (v * 10) + (c - '0');
-    if (new_v < v) {
+    if (new_v / 8 < v) {
       // Overflow occurred
       return false;
     }
@@ -311,13 +312,32 @@ bool ConsumeLeadingDigits(StringPiece* s, uint64* val) {
   }
 }
 
+bool ConsumeNonWhitespace(StringPiece* s, StringPiece* val) {
+  const char* p = s->data();
+  const char* limit = p + s->size();
+  while (p < limit) {
+    const char c = *p;
+    if (isspace(c)) break;
+    p++;
+  }
+  const size_t n = p - s->data();
+  if (n > 0) {
+    val->set(s->data(), n);
+    s->remove_prefix(n);
+    return true;
+  } else {
+    val->clear();
+    return false;
+  }
+}
+
 bool SplitAndParseAsInts(StringPiece text, char delim,
                          std::vector<int32>* result) {
   result->clear();
   std::vector<string> num_strings = Split(text, delim);
   for (const auto& s : num_strings) {
     int32 num;
-    if (!NumericParse32(s, &num)) return false;
+    if (!strings::safe_strto32(s, &num)) return false;
     result->push_back(num);
   }
   return true;
